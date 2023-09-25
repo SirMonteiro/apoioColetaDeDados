@@ -1,1 +1,2 @@
-pyfirmata
+telemetrix
+adafruit-circuitpython-ads1x15

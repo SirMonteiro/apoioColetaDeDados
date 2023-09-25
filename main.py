@@ -1,14 +1,18 @@
-from datetime import datetime
 from time import sleep
-from os import path
 import csv
-import pyfirmata
+from datetime import datetime
+from os import path
 import serial
+from telemetrix import telemetrix
+from board import SCL, SDA
+from busio import I2C
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
 
 # Define board and multimeter ports
-arduino = pyfirmata.ArduinoMega("/dev/ttyUSB0")
+arduino = telemetrix.Telemetrix(com_port="/dev/ttyUSB1", arduino_wait=3)
 multimeter = serial.Serial(
-    "/dev/ttyUSB1",
+    "/dev/ttyUSB0",
     9600,
     timeout=0,
     parity=serial.PARITY_NONE,
@@ -18,80 +22,97 @@ multimeter = serial.Serial(
     stopbits=serial.STOPBITS_TWO,
 )
 
-# Start iterator
-it = pyfirmata.util.Iterator(arduino)  # type: ignore
-it.start()
+# Initialize the Raspberry Pi I2C interface
+i2c = I2C(SCL, SDA)
+
+# Create an ADS1115 object and configure it
+ads = ADS.ADS1115(i2c)
+ads.gain = 2
+ads.data_rate = 128
+
+adsReferenceMeasureRaw = AnalogIn(ads, ADS.P0)
+adsMeasureRaw = AnalogIn(ads, ADS.P1)
 
 # counts how many measures points are connected at same time
-measurementPoints = 2
+MEASUREMENT_POINTS = 2
 measurementPointsPins = []
 
-# Define pins
-analogPin0 = arduino.get_pin("a:0:i")
+# Define arduino analog pin
+ANALOG_PIN = 0
 
-for i in range(measurementPoints):
+for i in range(MEASUREMENT_POINTS):
     measurementPointsPins.append([])
     for j in range(2):
-        measurementPointsPins[i].append(
-            arduino.get_pin("d:" + str(22 + j + (i * 2)) + ":o")
-        )
-        measurementPointsPins[i][j].write(1)
-sleep(1)
-
-# loop
-while True:
-    for i in range(measurementPoints):
-        measurementPointsPins[i][0].write(0)
-        measurementPointsPins[i][1].write(0)
-        sleep(0.25)
-        multimeter.write(b"RR,1\r\n")
-        sleep(0.1)
-        arduinoMeasure = analogPin0.read()
-        multimeterMeasure = multimeter.read(20)
-        measurementPointsPins[i][0].write(1)
-        measurementPointsPins[i][1].write(1)
-        if len(multimeterMeasure) < 15:
-            print("Error")
-            continue
-        # print "b'RR,N,+0.4033 VDCA\\r\\n'" to 0.4033
-        multimeterMeasure = multimeterMeasure.decode("utf-8")
-        multimeterMeasure = multimeterMeasure.split("+")[1].split(" ")[0]
-        arduinoMeasure = round(arduinoMeasure * 1.0658 / 1023, 4)
-        measureDiff = round(arduinoMeasure - float(multimeterMeasure), 4)
-        print(
-            "Arduino: "
-            + str(arduinoMeasure)
-            + "V Multimeter: "
-            + str(multimeterMeasure)
-            + "V diff "
-            + str(measureDiff)
-            + " V"
-        )
-        date = datetime.now()
-        csvName = f"{date.year}-{date.month}-{date.day}.csv"
-        if path.exists(csvName):
-            with open(
-                f"{date.year}-{date.month}-{date.day}.csv",
-                "a",
-                encoding="UTF8",
-                newline="",
-            ) as f:
-                writer = csv.writer(f)
-                # write the data
-                writer.writerow(
-                    [
-                        arduinoMeasure,
-                        multimeterMeasure,
-                        measureDiff,
-                    ]
-                )
-        else:
-            # File does not exist, write header row
-            with open(csvName, "w", encoding="UTF8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["Arduino", "Multimeter", "Diff"])
-        sleep(0.1)
+        pin = 22 + j + (i * 2)
+        arduino.set_pin_mode_digital_output(pin)
+        measurementPointsPins[i].append(pin)
+        arduino.digital_write(pin, 1)
+sleep(5)  # wait reference voltage to stabilize
 
 
-arduino.exit()
-multimeter.close()
+def arduino_callback(data):
+    global arduinoMeasureRaw
+    arduinoMeasureRaw = data[2]
+
+
+arduino.set_pin_mode_analog_input(ANALOG_PIN, differential=1, callback=arduino_callback)
+
+try:
+    while True:
+        for i in range(MEASUREMENT_POINTS):
+            relay0 = measurementPointsPins[i][0]
+            relay1 = measurementPointsPins[i][1]
+            arduino.digital_write(relay0, 0)
+            arduino.digital_write(relay1, 0)
+            sleep(0.25)  # 250ms wait to stabilize voltage
+            multimeter.write(b"RR,1\r\n")
+            sleep(0.1)  # wait 100ms to receive multimeter data
+            multimeterMeasureRaw = multimeter.read(20)
+            if multimeterMeasureRaw == b"":
+                print("Error reading multimeter")
+            try:
+                adsReferenceVoltage = round(adsReferenceMeasureRaw.voltage, 4) + 0.0025
+                adsVoltage = round(adsMeasureRaw.voltage, 4) + 0.0025
+                adsVoltageRaw = adsMeasureRaw.value
+            except:
+                print("Error reading ADS1115")
+            arduinoMeasure = arduinoMeasureRaw
+            arduino.digital_write(relay0, 1)
+            arduino.digital_write(relay1, 1)
+            multimeterMeasure = multimeterMeasureRaw.decode("utf-8")
+            multimeterMeasure = multimeterMeasure.split(",")[2][:-5]
+            multimeterMeasureVoltage = multimeterMeasure.split(" ")[0][1:]
+            arduinoMeasureVoltage = round(
+                (arduinoMeasure * adsReferenceVoltage) / 1024, 6
+            )
+            print(
+                f"Arduino: {arduinoMeasure} {arduinoMeasureVoltage}V\tMultimeter: {multimeterMeasure}\tdiff: {round(arduinoMeasureVoltage - float(multimeterMeasureVoltage), 4)}V\tADS: {round(adsVoltage, 4)}V\tdiff: {round(adsVoltage - float(multimeterMeasureVoltage), 4)}\tADS Reference: {round(adsReferenceVoltage, 4)}V"
+            )
+            date = datetime.now()
+            csvName = f"{date.year}-{date.month}-{date.day}.csv"
+            if path.exists(csvName):
+                with open(
+                    f"{date.year}-{date.month}-{date.day}.csv",
+                    "a",
+                    encoding="UTF8",
+                    newline="",
+                ) as f:
+                    writer = csv.writer(f)
+                    # write the data
+                    writer.writerow(
+                        [
+                            arduinoMeasure,
+                            multimeterMeasureVoltage,
+                            adsVoltageRaw,
+                            round(adsVoltage, 4),
+                        ]
+                    )
+            else:
+                # File does not exist, write header row
+                with open(csvName, "w", encoding="UTF8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Arduino", "Multimeter", "ADSRaw", "ADS"])
+            sleep(0.1)
+except KeyboardInterrupt:
+    arduino.shutdown()
+    multimeter.close()
