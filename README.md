@@ -6,22 +6,30 @@ Repositório criado para manter o histórico das documentações e códigos feit
 
 Atualmente, para fazer a aferição de potencial elétrico em ambientes de baixa tensão e corrente com precisão é necessário equipamentos de custo elevado e muita das vezes usar os _softwares_ proprietários das ferramentas, além disso, vários equipamentos precisam da disponibilidade do pesquisador para operar fazer manualmente. Desse modo, essa pesquisa visa estudar maneiras de realizar essa aferição com equipamentos de baixo custo que conseguem chegar em uma precisão igual ou maior aos equipamentos especializados e de forma contínua informar ao pesquisador o estado do objeto a ser aferido de forma forma a dispensar o mesmo de fazer essa tarefa repetitiva.
 
-# pesquisa de fato
+# Funcionamento
 
-No começo, conversei com o Prof. Dr. Fabio Nakano sobre o projeto e ele me passou o que já havia pesquisado, estudar o [Arduino Mega](https://docs.arduino.cc/hardware/mega-2560) e talvez alguns hardwares comunicáveis com esse microcontrolador, que, apesar da contraindicação de algumas fontes, parece ser um hardware bastante acessível e livre a adaptações.
+O sistema (_hardware_ e _software_) que está em construção mede tensões com vários sensores e registra essas tensões em arquivos texto.
 
-Para a validação dos estudos foi comprado o [multímetro de precisão Ty720 da Yokogawa](https://tmi.yokogawa.com/br/solutions/products/portable-and-bench-instruments/digital-multimeters/ty720-digital-multimeter/), um equipamento que permite a comunicação serial com um computador para a passagem de dados dele, sendo o detalhe para manter ele medindo constante, a reposição das pilhas nele, para isso foi comprado um estoque de pilhas alcalinas com o objetivo de manter esse equipamento com o funcionamento original dele afim de evitar qualquer variação nas medições.
+Um multímetro de precisão também é usado como sensor. Suas medidas serão usadas como referência para avaliação da qualidade dos outros sensores.
 
-Para controlar e processar todos os dados obtidos pelos dois hardwares foi pensado em ter um computador de placa-única (SBC), capaz de capturar as aferições e deixá-las disponível a qualquer momento para o pesquisador e para os estudos realizados. Para esse projeto, foi então comprado um [Raspberry pi 4](https://www.raspberrypi.com/products/raspberry-pi-4-model-b/).
+Relés são usados para conectar e desconectar as fontes de tensão.
 
-Para a comunicação entre o Arduino e o Raspberry pi inicialmente foi feita pelo protocolo [firmata](https://github.com/firmata/protocol), assim, o raspberry se comunica utilizando de _scripts_ python pela biblioteca [pyFirmata](https://pypi.org/project/pyFirmata/), por detalhes técnicos, a biblioteca foi alterada para a utilização do [telemetrix](https://pypi.org/project/telemetrix/) que é uma alternativa ao pyFirmata com uma melhor inicialização e suporte ao protocolo I2C.
+Estes relés e alguns dos sensores são controlados por uma _placa_ microcontrolada Arduino Mega que se comunica com um _computador_. No caso é usado um Raspberry Pi modelo 4B com 4Gbytes de RAM com sistema operacional Raspbian.
 
-Em uma das visitas ao laboratório, a Verena trouxe um kit montado por outros pesquisadores, de um arduino equipado com o módulo [ADS1115](https://www.ti.com/product/ADS1115), um conversor analógico digital de 16bits e assim idealizei o primeiro circuito para testes:
+Tanto o multímetro quanto a _placa_ comunicam-se com o _computador_ por portas USB.
 
-![Primeiro diagrama elétrico|1200](./res/firstDiagram.svg)
+Há muitas maneiras de programar a _placa_ e o computador de maneira que se comuniquem, por exemplo, executando na _placa_ um programa específico a esta aplicação, por exemplo, escrito em linguagem C e compilado com a IDE do Arduino; e executando no computador, por exemplo, um programa de comunicação serial genérico como puTTY ou minicom e alguns _scripts_ de sistema operacional.
 
-O Raspberry pi conectado ao wifi para ter acesso remoto aos dados coletados, O múltimetro Yokogawa representado pelo voltímetro no circuito acima conectado a usb, e um arduino também conectado na usb, que nele possui conectado dois pares de relês e um módulo ADS1115.
+Esta solução, embora funcional, dificultaria:
 
-Desse modo, é criado uma tabela contendo os valores brutos da coleta, que está funcionando da seguinte maneira: é conectado ao circuito um par de relês de cada vez para realizar a leitura de n pontos sendo a limitação o número de portas digitais do arduino, assim é coletado o ponto representado por um par de relês, o _timestamp_ da medição, o valor da entrada analógica do arduino conectado ao ponto de medição, a tensão referência do arduino medida pelo ADS1115, a tensão do ponto testado pelo ADS1115 e a tensão medida pelo Multímetro.
+-   reconfigurações no sistema, por exemplo, agregar outros sensores, pois criaria vários programas que precisariam ser ajustados;
+-   criação de uma interface gráfica local ao sistema, pois não provê facilidades para criação dessas interfaces;
 
-O uso dos relês estão atrelados em conseguir medir vários pontos ao "mesmo tempo", sem que um seja interferido por outro, pois eles sempre serão isolados até que o par de relê responsável pelo ponto se conecte ao circuito.
+(Por outro lado, permitiria usar o Raspberry Pi sem gerenciador de interface, o que possibilitaria usar um _computador_ com menos capacidade de processamento.)
+
+Optou-se por executar na _placa_ um programa de controle genérico e centralizar o desenvolvimento do _software_ no _computador_. Desta forma, se conveniente, a leitura do multímetro e dos sensores, o controle dos relés, o gerenciamento dos dados e a interface gráfica podem ser feitos através de um ou mais programas escritos na linguagem Python.
+
+Segue o detalhamento das partes do sistema
+
+-   [Detalhamento do _hardware_](doc/hardware.md);
+-   [Detalhamento do _software_](doc/software.md);
