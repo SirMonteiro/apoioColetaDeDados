@@ -163,5 +163,6 @@ cython_debug/
 
 # Custom
 .vscode/
+.idea/
 *.csv
 test*
