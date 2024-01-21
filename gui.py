@@ -1,18 +1,21 @@
+"""apoioColetaDeDados GUI module"""
 from tkinter import (
     Button,
     Frame,
     Label,
+    Text,
     StringVar,
     Tk,
-    LEFT,
+    END,
     CENTER,
 )
+from time import strftime
 
 
 class GUI(Tk):
     """GUI class to be used as a graphical user interface for program"""
 
-    def __init__(self):
+    def __init__(self, button_callback, points=16):
         Tk.__init__(self)
         self.title("apoioColetaDeDados")
         self.geometry("480x320")
@@ -22,7 +25,11 @@ class GUI(Tk):
         title_label = Label(
             self, text="Apoio Coleta de dados - Medidor de tensão elétrica"
         )
-        title_label.grid(row=0, columnspan=5)
+        title_label.grid(row=0, columnspan=4)
+
+        self.clock_text = StringVar(value="01/01/1970 0:00:00")
+        clock_label = Label(self, textvariable=self.clock_text)
+        clock_label.grid(row=0, column=4, columnspan=1)
 
         # Divisor line
         divisor = Frame(self, height=1, bg="black")
@@ -37,10 +44,17 @@ class GUI(Tk):
         voltage1_label = Label(self, text="Tensão")
         voltage1_label.grid(row=2, column=2)
 
-        point2_label = Label(self, text="Ponto")
-        point2_label.grid(row=2, column=3)
-        voltage2_label = Label(self, text="Tensão")
-        voltage2_label.grid(row=2, column=4)
+        if points > 8:
+            point2_label = Label(self, text="Ponto")
+            point2_label.grid(row=2, column=3)
+            voltage2_label = Label(self, text="Tensão")
+            voltage2_label.grid(row=2, column=4)
+
+        self.timestamp_text = StringVar(value="Esperando aferição...")
+        widget_timestamp = Label(
+            self, textvariable=self.timestamp_text
+        )  # Create a new timestamp widget
+        widget_timestamp.grid(row=3, column=0)  # Place the new timestamp widget
 
         for i in range(5):
             self.grid_columnconfigure(i, weight=1)
@@ -60,7 +74,7 @@ class GUI(Tk):
             text="Aferição manual",
             width=20,
             height=2,
-            command=self.FRAME,
+            command=button_callback,
         )
         button.place(relx=0.5, rely=0.85, anchor=CENTER)
 
@@ -73,17 +87,21 @@ class GUI(Tk):
         )
         doubts_label.place(relx=0.5, rely=0.97, anchor=CENTER)
 
-        # Inicialize all measurements with "waiting for measurement"
-        self.change_timestamp("Esperando aferição...")
-        for i in range(1, 17):
+        # Inicialize clock
+        self.update_clock()
+
+        for i in range(1, points + 1):
             self.change_measurement(i, "Esperando...")
+
+    def update_clock(self):
+        """Update the clock text with the current time"""
+        self.clock_text.set(strftime("%F %H:%M:%S"))
+        self.after(1000, self.update_clock)
 
     def clear_grid(self, row, column):
         """Destroy all widgets in the specified row and column
         Parameters
         ----------
-        tk_window : class, required
-            tkinter window object
         row : int, required
             row of the widgets to be destroyed
         column : int, required
@@ -102,11 +120,7 @@ class GUI(Tk):
         timestamp : str, required
             timestamp to be displayed
         """
-        self.clear_grid(3, 0)  # Clear the timestamp widget
-        widget_timestamp = Label(
-            self, text=str(timestamp)
-        )  # Create a new timestamp widget
-        widget_timestamp.grid(row=3, column=0)  # Place the new timestamp widget
+        self.timestamp_text.set(str(timestamp))
 
     def change_measurement(self, point, voltage):
         """Change the measurement text with the specified text
@@ -133,30 +147,32 @@ class GUI(Tk):
 
         def __init__(self):
             Frame.__init__(self, bg="#f5f5f5")
-            # Create a frame that is 93% of the window's height
-
-            # frame = Frame(self, bg="#f5f5f5")
-            # frame.place(rely=0.07, relwidth=1, relheight=0.93)
             self.place(relx=0.01, rely=0.01, relwidth=0.98, relheight=0.98)
 
-            # Create a StringVar to control the text of the label
-            self.label_text = StringVar()
-            self.label_text.set("")  # Initially, the label has no text
-
-            # Create a large label inside the frame
-            label = Label(
-                self, textvariable=self.label_text, justify=LEFT, bg="#f5f5f5"
+            # Create a textarea inside the frame
+            self.text_widget = Text(
+                self,
+                state="disabled",
+                width=450,
+                bg="#f5f5f5",
+                padx=4,
             )
-            label.place(relx=0.01, rely=0.01)
+            self.text_widget.pack(fill="both", expand=True)
 
-        def print_text(self, t):
-            """Change the frame text with the specified text"""
-            self.label_text.set(str(t))
+        def append_text(self, t):
+            """Append text to the text widget and auto scroll when needed
+            Parameters
+            ----------
+            t : str, required
+                text to append
+            """
+            self.text_widget.configure(state="normal")
+            self.text_widget.insert(END, str(t))
+            self.text_widget.see("end")
+            self.text_widget.configure(state="disabled")
 
         def destroy_frame(self):
             """Destroy the frame"""
             self.destroy()
 
-
-teste = GUI()
-teste.mainloop()
+# GUI(1).mainloop()
