@@ -9,12 +9,12 @@ from busio import I2C
 import adafruit_ads1x15.ads1115 as ads
 from adafruit_ads1x15.analog_in import AnalogIn
 from telemetrix import telemetrix
-import gui
+import gui as guiModule
 
 # Define board and multimeter ports
-arduino = telemetrix.Telemetrix(com_port="/dev/ttyUSB1", arduino_wait=3)
+arduino = telemetrix.Telemetrix(arduino_wait=3)
 multimeter = serial.Serial(
-    "/dev/ttyUSB0",
+    "/dev/ttyUSB10",
     9600,
     timeout=0,
     parity=serial.PARITY_NONE,
@@ -30,8 +30,8 @@ i2c = I2C(1, 0)
 
 # Create an ADS1115 object and configure it
 ads_module = ads.ADS1115(i2c)
-ADS_gain = 2  # 2.048V
-ads_module.gain = ADS_gain
+ADS_GAIN = 2  # 2.048V
+ads_module.gain = ADS_GAIN
 ads_module.data_rate = 128
 
 adsReferenceMeasureRaw = AnalogIn(ads_module, ads.P0)
@@ -42,7 +42,7 @@ MEASUREMENT_POINTS = 3
 measurementPointsPins = []
 
 # Define arduino analog pin
-ANALOG_PIN = 0
+ANALOG_PIN = 1
 # Define arduino callback global variables
 arduinoMeasureRaw = 0
 arduinoMeasureTimestamp = ""
@@ -86,7 +86,7 @@ def write_csv(
 ):
     date_now = datetime.now()
     csv_name = f"{date_now.year}-{date_now.month}-{date_now.day}.csv"
-    output_filename = "outputTest/" + csv_name
+    output_filename = "output/" + csv_name
     if not path.exists(output_filename):
         # File does not exist, write header row
         with open(output_filename, "w", encoding="UTF8", newline="") as f:
@@ -121,7 +121,7 @@ def write_csv(
                 ads_reference_voltage,
                 ads_voltage_raw,
                 ads_voltage,
-                ADS_gain,
+                ADS_GAIN,
                 multimeter_measure_voltage,
             ]
         )
@@ -134,7 +134,7 @@ def measure(measurement_point, frame=None):
     arduino.digital_write(relay1, 0)
     sleep(0.250)  # 250ms wait to stabilize voltage
     multimeter.write(b"RR,1\r\n")
-    sleep(0.2)  # wait 200ms to receive multimeter data
+    sleep(0.8)  # wait 800ms to receive multimeter data
     multimeter_measure_raw = multimeter.read(20)
     try:
         ads_reference_voltage = adsReferenceMeasureRaw.voltage
@@ -149,6 +149,7 @@ def measure(measurement_point, frame=None):
     arduino_measure = int(arduinoMeasureRaw)
     arduino.digital_write(relay0, 1)
     arduino.digital_write(relay1, 1)
+    sleep(0.5)  # 250ms wait to remove
     multimeter_measure = multimeter_measure_raw.decode("utf-8")
     try:
         # multimeter_measure_voltage = float(multimeter_measure.split(",")[2].split("VDC")[
@@ -157,12 +158,13 @@ def measure(measurement_point, frame=None):
             1:
         ]
         if "m" in multimeter_measure_voltage:
-            multimeter_measure_voltage = (
-                float(multimeter_measure_voltage.split("m")[0]) / 1000
+            multimeter_measure_voltage = round(
+                float(multimeter_measure_voltage.split("m")[0]) / 1000, 6
             )
         else:
             multimeter_measure_voltage = float(multimeter_measure_voltage)
         if multimeter_measure_voltage == 0:
+            print("Error: multimeter reading 0V")
             return False
     except IndexError:
         print("Error reading multimeter")
@@ -183,7 +185,7 @@ def measure(measurement_point, frame=None):
         f"(Arduino: {arduino_measure:04d}  {arduino_measure_voltage:.4f}V) "
         f"(ads Reference: {ads_reference_raw:05d}  {ads_reference_voltage:.18f}V) "
         f"(ads: {ads_voltage_raw:05d}  {ads_voltage:.18f}V) "
-        f"(Multimeter: {multimeter_measure_voltage:.4f}V)"
+        f"(Multimeter: {multimeter_measure_voltage:.6f}V)"
     )
     write_csv(
         measurement_point,
@@ -195,14 +197,14 @@ def measure(measurement_point, frame=None):
         ads_voltage,
         multimeter_measure_voltage,
     )
-    write_gui(measurement_point, multimeter_measure_voltage)
+    write_gui(measurement_point + 1, multimeter_measure_voltage)
     if frame:
         frame.append_text(
             f"[{arduinoMeasureTimestamp}] {int(measurement_point + 1)}: "
             f"(Arduino: {arduino_measure:04d}  {arduino_measure_voltage:.4f}V) "
             f"(ads Reference: {ads_reference_raw:05d}  {ads_reference_voltage:.18f}V) "
             f"(ads: {ads_voltage_raw:05d}  {ads_voltage:.18f}V) "
-            f"(Multimeter: {multimeter_measure_voltage:.4f}V)\n"
+            f"(Multimeter: {multimeter_measure_voltage:.6f}V)\n"
         )
     return True
 
@@ -228,13 +230,14 @@ def manual_measure():
 
 def run():
     """Measure all points every 60 seconds"""
-    gui.after(60000, measure_all)
+    gui.after(60000, run)
     measure_all()
 
 
-gui = gui.GUI(manual_measure, MEASUREMENT_POINTS)
+gui = guiModule.GUI(manual_measure, MEASUREMENT_POINTS)
+
 try:
-    gui.after(0, run)
+    gui.after(100, run)
     gui.mainloop()
 except KeyboardInterrupt:
     arduino.shutdown()
