@@ -1,0 +1,1 @@
+ACTION=="add", ATTRS{idVendor}=="12ec", ATTRS{idProduct}=="2015", RUN+="/sbin/modprobe ftdi_sio", RUN+="/usr/bin/sh -c 'echo 12ec 2015 > /sys/bus/usb-serial/drivers/ftdi_sio/new_id'", SYMLINK+="ttyUSB10"
