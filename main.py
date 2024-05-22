@@ -9,7 +9,7 @@ from busio import I2C
 import adafruit_ads1x15.ads1115 as ads
 from adafruit_ads1x15.analog_in import AnalogIn
 from telemetrix import telemetrix
-import gui as guiModule
+import Gui
 
 # Define board and multimeter ports
 arduino = telemetrix.Telemetrix(arduino_wait=3)
@@ -30,8 +30,8 @@ i2c = I2C(1, 0)
 
 # Create an ADS1115 object and configure it
 ads_module = ads.ADS1115(i2c)
-ADS_GAIN = 2  # 2.048V
-ads_module.gain = ADS_GAIN
+ADS_gain = 2  # 2.048V
+ads_module.gain = ADS_gain
 ads_module.data_rate = 128
 
 adsReferenceMeasureRaw = AnalogIn(ads_module, ads.P0)
@@ -64,7 +64,8 @@ def arduino_callback(data):
     arduinoMeasureTimestamp = strftime("%Y-%m-%d %H:%M:%S", localtime(data[3]))
 
 
-arduino.set_pin_mode_analog_input(ANALOG_PIN, differential=0, callback=arduino_callback)
+arduino.set_pin_mode_analog_input(
+    ANALOG_PIN, differential=0, callback=arduino_callback)
 
 sleep(1)  # wait arduino_callback populates variables first time
 
@@ -121,7 +122,7 @@ def write_csv(
                 ads_reference_voltage,
                 ads_voltage_raw,
                 ads_voltage,
-                ADS_GAIN,
+                ADS_gain,
                 multimeter_measure_voltage,
             ]
         )
@@ -132,9 +133,9 @@ def measure(measurement_point, frame=None):
     relay1 = measurementPointsPins[measurement_point][1]
     arduino.digital_write(relay0, 0)
     arduino.digital_write(relay1, 0)
-    sleep(0.250)  # 250ms wait to stabilize voltage
+    sleep(1.25)  # 1250ms wait to stabilize voltage
     multimeter.write(b"RR,1\r\n")
-    sleep(0.8)  # wait 800ms to receive multimeter data
+    sleep(2)  # wait 2000ms to receive multimeter data
     multimeter_measure_raw = multimeter.read(20)
     try:
         ads_reference_voltage = adsReferenceMeasureRaw.voltage
@@ -149,7 +150,6 @@ def measure(measurement_point, frame=None):
     arduino_measure = int(arduinoMeasureRaw)
     arduino.digital_write(relay0, 1)
     arduino.digital_write(relay1, 1)
-    sleep(0.5)  # 250ms wait to remove
     multimeter_measure = multimeter_measure_raw.decode("utf-8")
     try:
         # multimeter_measure_voltage = float(multimeter_measure.split(",")[2].split("VDC")[
@@ -170,7 +170,8 @@ def measure(measurement_point, frame=None):
         print("Error reading multimeter")
         # multimeter_measure_voltage = 0.0000
         return False
-    arduino_measure_voltage = round((arduino_measure * ads_reference_voltage) / 1024, 4)
+    arduino_measure_voltage = round(
+        (arduino_measure * ads_reference_voltage) / 1024, 4)
 
     # print(
     #     f"{arduinoMeasureTimestamp} Arduino: {arduino_measure} {arduino_measure_voltage}V\t"
@@ -197,7 +198,7 @@ def measure(measurement_point, frame=None):
         ads_voltage,
         multimeter_measure_voltage,
     )
-    write_gui(measurement_point + 1, multimeter_measure_voltage)
+    write_gui(measurement_point + 1, '{:.6f}'.format(multimeter_measure_voltage))
     if frame:
         frame.append_text(
             f"[{arduinoMeasureTimestamp}] {int(measurement_point + 1)}: "
@@ -213,12 +214,12 @@ def measure_all(frame=None):
     for point in range(MEASUREMENT_POINTS):
         measure_success = measure(point, frame)
         if not measure_success:
-            print("Retrying in 10 seconds")
-            sleep(10)  # retry in 10 seconds
+            print("Retrying in 5 seconds")
+            sleep(5)  # retry in 5 seconds
             measure_success = measure(point, frame)
             if not measure_success:
                 return
-        sleep(0.05)  # Wait 50ms between each measure
+        sleep(0.25)  # Wait 250ms between each measure
     print("\n")
 
 
@@ -234,7 +235,7 @@ def run():
     measure_all()
 
 
-gui = guiModule.GUI(manual_measure, MEASUREMENT_POINTS)
+gui = Gui.GUI(manual_measure, MEASUREMENT_POINTS)
 
 try:
     gui.after(100, run)
