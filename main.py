@@ -57,7 +57,7 @@ for i in range(MEASUREMENT_POINTS):
 sleep(3)  # wait reference voltage to stabilize
 
 
-def arduino_callback(data):
+def arduino_callback(data)->None:
     global arduinoMeasureRaw
     global arduinoMeasureTimestamp
     arduinoMeasureRaw = data[2]
@@ -70,7 +70,7 @@ arduino.set_pin_mode_analog_input(
 sleep(1)  # wait arduino_callback populates variables first time
 
 
-def write_gui(measurement_point, multimeter_measure_voltage):
+def write_gui(measurement_point, multimeter_measure_voltage)->None:
     gui.change_timestamp(arduinoMeasureTimestamp)
     gui.change_measurement(measurement_point, multimeter_measure_voltage)
 
@@ -84,7 +84,7 @@ def write_csv(
     ads_voltage_raw,
     ads_voltage,
     multimeter_measure_voltage,
-):
+)->None:
     date_now = datetime.now()
     csv_name = f"{date_now.year}-{date_now.month}-{date_now.day}.csv"
     output_filename = "output/" + csv_name
@@ -128,7 +128,7 @@ def write_csv(
         )
 
 
-def measure(measurement_point, frame=None):
+def measure(measurement_point, frame=None)->bool:
     relay0 = measurementPointsPins[measurement_point][0]
     relay1 = measurementPointsPins[measurement_point][1]
     arduino.digital_write(relay0, 0)
@@ -159,13 +159,15 @@ def measure(measurement_point, frame=None):
         ]
         if "m" in multimeter_measure_voltage:
             multimeter_measure_voltage = round(
-                float(multimeter_measure_voltage.split("m")[0]) / 1000, 6
+                float(multimeter_measure_voltage[:-1]) / 1000, 6
             )
         else:
             multimeter_measure_voltage = float(multimeter_measure_voltage)
         if multimeter_measure_voltage == 0:
             print("Error: multimeter reading 0V")
             return False
+        if "B" in multimeter_measure.split(",")[1]:
+            print("Change multimeter battery!")
     except IndexError:
         print("Error reading multimeter")
         # multimeter_measure_voltage = 0.0000
@@ -210,7 +212,7 @@ def measure(measurement_point, frame=None):
     return True
 
 
-def measure_all(frame=None):
+def measure_all(frame=None)->None:
     for point in range(MEASUREMENT_POINTS):
         measure_success = measure(point, frame)
         if not measure_success:
@@ -223,13 +225,13 @@ def measure_all(frame=None):
     print("\n")
 
 
-def manual_measure():
+def manual_measure()->None:
     frame = gui.FRAME()
     measure_all(frame)
     frame.destroy_frame()
 
 
-def run():
+def run()->None:
     """Measure all points every 60 seconds"""
     gui.after(60000, run)
     measure_all()
