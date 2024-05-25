@@ -2,7 +2,9 @@ from time import sleep, strftime, localtime
 import csv
 from datetime import datetime
 from os import path
+from sys import stderr
 import serial
+import serial.tools.list_ports
 
 # from board import SCL, SDA
 from busio import I2C
@@ -11,10 +13,30 @@ from adafruit_ads1x15.analog_in import AnalogIn
 from telemetrix import telemetrix
 import Gui
 
+
+def multimeter_port():
+    ports = serial.tools.list_ports.comports()
+    desiredHWId = "12EC:2015"
+    for port in ports:
+        if desiredHWId in port.hwid:
+            return port.device
+    print(f"Port with HWid '{desiredHWId}' not found.", file=stderr)
+    exit(1)
+
+
+def arduino_port():
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if "USB" in port.hwid and "erial" in port.description:
+            return port.device
+    print("Arduino not found with \"serial\" in the description.", file=stderr)
+    exit(1)
+
+
 # Define board and multimeter ports
-arduino = telemetrix.Telemetrix(arduino_wait=3)
+arduino = telemetrix.Telemetrix(com_port=arduino_port(), arduino_wait=3)
 multimeter = serial.Serial(
-    "/dev/ttyUSB10",
+    multimeter_port(),
     9600,
     timeout=0,
     parity=serial.PARITY_NONE,
@@ -57,7 +79,7 @@ for i in range(MEASUREMENT_POINTS):
 sleep(3)  # wait reference voltage to stabilize
 
 
-def arduino_callback(data)->None:
+def arduino_callback(data) -> None:
     global arduinoMeasureRaw
     global arduinoMeasureTimestamp
     arduinoMeasureRaw = data[2]
@@ -70,7 +92,7 @@ arduino.set_pin_mode_analog_input(
 sleep(1)  # wait arduino_callback populates variables first time
 
 
-def write_gui(measurement_point, multimeter_measure_voltage)->None:
+def write_gui(measurement_point, multimeter_measure_voltage) -> None:
     gui.change_timestamp(arduinoMeasureTimestamp)
     gui.change_measurement(measurement_point, multimeter_measure_voltage)
 
@@ -84,7 +106,7 @@ def write_csv(
     ads_voltage_raw,
     ads_voltage,
     multimeter_measure_voltage,
-)->None:
+) -> None:
     date_now = datetime.now()
     csv_name = f"{date_now.year}-{date_now.month}-{date_now.day}.csv"
     output_filename = "output/" + csv_name
@@ -128,14 +150,14 @@ def write_csv(
         )
 
 
-def measure(measurement_point, frame=None)->bool:
+def measure(measurement_point, frame=None) -> bool:
     relay0 = measurementPointsPins[measurement_point][0]
     relay1 = measurementPointsPins[measurement_point][1]
     arduino.digital_write(relay0, 0)
     arduino.digital_write(relay1, 0)
     sleep(1.25)  # 1250ms wait to stabilize voltage
     multimeter.write(b"RR,1\r\n")
-    sleep(2)  # wait 2000ms to receive multimeter data
+    sleep(0.2)  # wait 200ms to receive multimeter data
     multimeter_measure_raw = multimeter.read(20)
     try:
         ads_reference_voltage = adsReferenceMeasureRaw.voltage
@@ -200,7 +222,8 @@ def measure(measurement_point, frame=None)->bool:
         ads_voltage,
         multimeter_measure_voltage,
     )
-    write_gui(measurement_point + 1, '{:.6f}'.format(multimeter_measure_voltage))
+    write_gui(measurement_point + 1,
+              '{:.6f}'.format(multimeter_measure_voltage))
     if frame:
         frame.append_text(
             f"[{arduinoMeasureTimestamp}] {int(measurement_point + 1)}: "
@@ -212,7 +235,7 @@ def measure(measurement_point, frame=None)->bool:
     return True
 
 
-def measure_all(frame=None)->None:
+def measure_all(frame=None) -> None:
     for point in range(MEASUREMENT_POINTS):
         measure_success = measure(point, frame)
         if not measure_success:
@@ -225,25 +248,25 @@ def measure_all(frame=None)->None:
     print("\n")
 
 
-def manual_measure()->None:
+def manual_measure() -> None:
     frame = gui.FRAME()
     measure_all(frame)
     frame.destroy_frame()
 
 
-def run()->None:
+def run() -> None:
     """Measure all points every 60 seconds"""
     gui.after(60000, run)
     measure_all()
 
 
-gui = Gui.GUI(manual_measure, MEASUREMENT_POINTS)
-
-try:
-    gui.after(100, run)
-    gui.mainloop()
-except KeyboardInterrupt:
-    arduino.shutdown()
-    multimeter.close()
-    gui.destroy()
-    print("Exiting...")
+if __name__ == "__main__":
+    gui = Gui.GUI(manual_measure, MEASUREMENT_POINTS)
+    try:
+        gui.after(100, run)
+        gui.mainloop()
+    except KeyboardInterrupt:
+        arduino.shutdown()
+        multimeter.close()
+        gui.destroy()
+        print("Exiting...")
