@@ -3,25 +3,14 @@ import csv
 from datetime import datetime
 from os import path
 from sys import stderr
-import serial
 import serial.tools.list_ports
 
-# from board import SCL, SDA
 from busio import I2C
 import adafruit_ads1x15.ads1115 as ads
 from adafruit_ads1x15.analog_in import AnalogIn
 from telemetrix import telemetrix
 import Gui
-
-
-def multimeter_port():
-    ports = serial.tools.list_ports.comports()
-    desiredHWId = "12EC:2015"
-    for port in ports:
-        if desiredHWId in port.hwid:
-            return port.device
-    print(f"Port with HWid '{desiredHWId}' not found.", file=stderr)
-    exit(1)
+import Multimeter
 
 
 def arduino_port():
@@ -35,16 +24,7 @@ def arduino_port():
 
 # Define board and multimeter ports
 arduino = telemetrix.Telemetrix(com_port=arduino_port(), arduino_wait=3)
-multimeter = serial.Serial(
-    multimeter_port(),
-    9600,
-    timeout=0,
-    parity=serial.PARITY_NONE,
-    rtscts=False,
-    xonxoff=False,
-    dsrdtr=False,
-    stopbits=serial.STOPBITS_TWO,
-)
+multimeter = Multimeter.MULTIMETER()
 
 # Initialize the Raspberry Pi I2C interface
 # i2c = I2C(SCL, SDA)
@@ -156,9 +136,6 @@ def measure(measurement_point, frame=None) -> bool:
     arduino.digital_write(relay0, 0)
     arduino.digital_write(relay1, 0)
     sleep(1.25)  # 1250ms wait to stabilize voltage
-    multimeter.write(b"RR,1\r\n")
-    sleep(0.2)  # wait 200ms to receive multimeter data
-    multimeter_measure_raw = multimeter.read(20)
     try:
         ads_reference_voltage = adsReferenceMeasureRaw.voltage
         ads_reference_raw = adsReferenceMeasureRaw.value
@@ -170,41 +147,17 @@ def measure(measurement_point, frame=None) -> bool:
         arduino.digital_write(relay1, 1)
         return False
     arduino_measure = int(arduinoMeasureRaw)
+    multimeter_measure = multimeter.read_VDC_value()
+    if (multimeter_measure["status"] is True):
+        multimeter_measure_voltage = multimeter_measure["value"]
+    else:
+        arduino.digital_write(relay0, 1)
+        arduino.digital_write(relay1, 1)
+        return False
     arduino.digital_write(relay0, 1)
     arduino.digital_write(relay1, 1)
-    multimeter_measure = multimeter_measure_raw.decode("utf-8")
-    try:
-        # multimeter_measure_voltage = float(multimeter_measure.split(",")[2].split("VDC")[
-        #     0][1:])
-        multimeter_measure_voltage = multimeter_measure.split(",")[2].split("VDC")[0][
-            1:
-        ]
-        if "m" in multimeter_measure_voltage:
-            multimeter_measure_voltage = round(
-                float(multimeter_measure_voltage[:-1]) / 1000, 6
-            )
-        else:
-            multimeter_measure_voltage = float(multimeter_measure_voltage)
-        if multimeter_measure_voltage == 0:
-            print("Error: multimeter reading 0V")
-            return False
-        if "B" in multimeter_measure.split(",")[1]:
-            print("Change multimeter battery!")
-    except IndexError:
-        print("Error reading multimeter")
-        # multimeter_measure_voltage = 0.0000
-        return False
     arduino_measure_voltage = round(
         (arduino_measure * ads_reference_voltage) / 1024, 4)
-
-    # print(
-    #     f"{arduinoMeasureTimestamp} Arduino: {arduino_measure} {arduino_measure_voltage}V\t"
-    #     f"Multimeter: {multimeter_measure_voltage}\t"
-    #     f"diff: {round(arduino_measure_voltage - float(multimeter_measure_voltage),4)}V\t"
-    #     f"ADS: {round(ads_voltage, 4)}V\t"
-    #     f"diff: {round(ads_voltage - float(multimeter_measure_voltage),4)}\t"
-    #     f"ADS Reference: {round(ads_reference_voltage, 4)}V"
-    # )
     print(
         f"[{arduinoMeasureTimestamp}] {int(measurement_point + 1)}: "
         f"(Arduino: {arduino_measure:04d}  {arduino_measure_voltage:.4f}V) "
@@ -267,6 +220,8 @@ if __name__ == "__main__":
         gui.mainloop()
     except KeyboardInterrupt:
         arduino.shutdown()
+        i2c.deinit()
         multimeter.close()
         gui.destroy()
         print("Exiting...")
+        exit(0)
