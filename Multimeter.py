@@ -31,13 +31,15 @@ class MULTIMETER(Serial):
 
     def read_current_value(self) -> str:
         self.write(b"RR,1\r\n")
-        sleep(0.2) # wait 200ms to receive multimeter data
+        sleep(0.5) # wait 500ms to receive multimeter data
         return self.readline().decode("utf-8")
 
     def read_VDC_value(self) -> dict:
         current = self.read_current_value()
         battery_low = False
         status = True
+        multimeter_measure_voltage = None # Default value in case of unexpected error
+        battery_low = None
         try:
             multimeter_measure_voltage = current.split(",")[2].split("VDC")[0][
                 1:
@@ -52,6 +54,8 @@ class MULTIMETER(Serial):
             if "B" in current.split(",")[1]:
                 print("Change multimeter battery!")
                 battery_low = True
+            else:
+                battery_low = False
 
             if multimeter_measure_voltage == 0:
                 print("Error: multimeter reading 0V")
@@ -59,4 +63,7 @@ class MULTIMETER(Serial):
         except IndexError:
             print("Error reading multimeter")
             status = False
+        except Exception:
+            status = False
+
         return {"value": multimeter_measure_voltage, "battery_low": battery_low, "status": status}
